@@ -34,6 +34,7 @@ type GameState = {
   playerCount: number;
   cardCount: number;
   occupiedCardNumbers: number[];
+  botCardNumbers: number[];
   prizeAmount: number;
   status: string;
   winners: BingoWinner[];
@@ -365,6 +366,7 @@ export default function Index() {
   const [gameId, setGameId] = useState<string | null>(null);
   const currentGameId = useRef<string | null>(null);
   const [occupiedCardIds, setOccupiedCardIds] = useState<Set<number>>(new Set());
+  const [botCardIds, setBotCardIds] = useState<Set<number>>(new Set());
   const [playing, setPlaying] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [notice, setNotice] = useState("ካርዶች እየተጫኑ ነው...");
@@ -437,14 +439,20 @@ export default function Index() {
   useEffect(() => { if (panel === "wallet") loadWallet().catch((error) => setNotice(error.message)); }, [panel]);
   useEffect(() => {
     const url = `${apiBase}/api/game?gameType=${gameType}${user ? `&userId=${user.id}` : ""}`;
-    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; cardCount?: number } | null) => {
-      if (!activeGame) return;
+    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; botCardNumbers?: unknown; cardCount?: number } | null) => {
+      if (!activeGame) {
+        setSelectionGameStatus(null);
+        setOccupiedCardIds(new Set());
+        setBotCardIds(new Set());
+        return;
+      }
       if (activeGame.id !== undefined) {
         const nextGameId = String(activeGame.id);
         if (currentGameId.current && currentGameId.current !== nextGameId) {
           gameSocket.current?.emit("game:leave");
           setSelected([]);
           setOccupiedCardIds(new Set());
+          setBotCardIds(new Set());
         }
         currentGameId.current = nextGameId;
         setGameId(nextGameId);
@@ -472,9 +480,10 @@ export default function Index() {
         }
       }
       setOccupiedCardIds(new Set(Array.isArray(activeGame.occupiedCardNumbers) ? activeGame.occupiedCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400) : []));
+      setBotCardIds(new Set(Array.isArray(activeGame.botCardNumbers) ? activeGame.botCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400) : []));
     };
-    fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); });
-    const statusTimer = window.setInterval(() => fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => undefined), 2000);
+    fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); setBotCardIds(new Set()); });
+    const statusTimer = window.setInterval(() => fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); setBotCardIds(new Set()); }), 2000);
     return () => window.clearInterval(statusTimer);
   }, [gameType, apiBase, user, selected.length]);
   useEffect(() => {
@@ -565,6 +574,7 @@ export default function Index() {
       setGame(state);
       setCurrentCardCount(state.cardCount);
       setOccupiedCardIds(new Set(state.occupiedCardNumbers.filter((id) => Number.isInteger(id) && id >= 1 && id <= 400 && !selectedRef.current.includes(id))));
+      setBotCardIds(new Set(state.botCardNumbers.filter((id) => Number.isInteger(id) && id >= 1 && id <= 400)));
       setFinalizing(state.status === "finalizing");
       setPlaying((state.status === "active" || state.status === "complete") && selectedRef.current.length > 0);
       setCalled(new Set(state.calledNumbers));
@@ -867,11 +877,11 @@ export default function Index() {
         {cardIdentifiers.map((id) => (
           <button
             key={id}
-            className={`${selected.includes(id) ? "active" : ""} ${occupiedCardIds.has(id) ? "occupied" : ""}`}
+            className={`${selected.includes(id) ? "active" : ""} ${occupiedCardIds.has(id) ? "occupied" : ""} ${botCardIds.has(id) ? "bot-occupied" : ""}`}
             onClick={() => toggle(id)}
             disabled={selectionLocked || occupiedCardIds.has(id)}
             aria-pressed={selected.includes(id)}
-            aria-label={occupiedCardIds.has(id) ? `Card ${id}, occupied` : `Card ${id}`}
+            aria-label={botCardIds.has(id) ? `Card ${id}, occupied by bot` : occupiedCardIds.has(id) ? `Card ${id}, occupied` : `Card ${id}`}
           >
             {id}
           </button>

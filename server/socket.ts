@@ -13,6 +13,7 @@ type GameState = {
   playerCount: number;
   cardCount: number;
   occupiedCardNumbers: number[];
+  botCardNumbers: number[];
   prizeAmount: number;
   winners: BingoWinner[];
   selectionEndsAt: string | null;
@@ -27,6 +28,7 @@ function toGameState(row: any): GameState {
     playerCount: Number(row.player_count ?? 0),
     cardCount: Number(row.card_count ?? 0),
     occupiedCardNumbers: (row.occupied_card_numbers ?? []).map(Number),
+    botCardNumbers: (row.bot_card_numbers ?? []).map(Number),
     prizeAmount: Number(row.prize_pool ?? 0),
     selectionEndsAt: row.selecting_started_at ? new Date(new Date(row.selecting_started_at).getTime() + 50000).toISOString() : null,
     winners: (row.winners ?? []).map((winner: BingoWinner) => ({

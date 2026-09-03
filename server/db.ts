@@ -538,16 +538,24 @@ export async function getActiveGame(userId?: number) {
           [game.id, userId],
         )
       : { rows: [] as Array<{ card_number: number }> };
+    const botCardsResult = await client.query(
+      `SELECT gc.card_number
+       FROM game_cards gc
+       JOIN users u ON u.id = gc.user_id
+       WHERE gc.game_id = $1 AND u.is_bot = TRUE`,
+      [game.id],
+    );
     const occupiedCardNumbers = occupiedResult.rows.map((row) => {
       const cardNumber = Number(row.card_number);
       return cardNumber - 400;
     });
+    const botCardNumbers = botCardsResult.rows.map((row) => Number(row.card_number) - 400);
     const cardCountResult = await client.query("SELECT COUNT(*)::int AS count FROM game_cards WHERE game_id = $1", [game.id]);
     await client.query("COMMIT");
     const selectionEndsAt = game.selecting_started_at
       ? new Date(new Date(game.selecting_started_at).getTime() + 50000).toISOString()
       : null;
-    return { ...game, selectionEndsAt, occupiedCardNumbers, cardCount: Number(cardCountResult.rows[0]?.count ?? 0) };
+    return { ...game, selectionEndsAt, occupiedCardNumbers, botCardNumbers, cardCount: Number(cardCountResult.rows[0]?.count ?? 0) };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -725,9 +733,11 @@ export async function readGameState(gameId: string) {
     `SELECT g.id, g.status, g.prize_pool, g.called_numbers, g.current_number, g.selecting_started_at,
             COUNT(DISTINCT gc.user_id)::int AS player_count,
             COUNT(gc.card_number)::int AS card_count,
-            COALESCE(ARRAY_AGG(gc.card_number - 400) FILTER (WHERE gc.card_number IS NOT NULL), '{}') AS occupied_card_numbers
+            COALESCE(ARRAY_AGG(gc.card_number - 400) FILTER (WHERE gc.card_number IS NOT NULL), '{}') AS occupied_card_numbers,
+            COALESCE(ARRAY_AGG(gc.card_number - 400) FILTER (WHERE gc.card_number IS NOT NULL AND u.is_bot = TRUE), '{}') AS bot_card_numbers
      FROM games g
      LEFT JOIN game_cards gc ON gc.game_id = g.id
+     LEFT JOIN users u ON u.id = gc.user_id
      WHERE g.id = $1
      GROUP BY g.id`,
     [gameId],
