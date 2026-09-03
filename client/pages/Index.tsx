@@ -369,6 +369,7 @@ export default function Index() {
   const [botCardIds, setBotCardIds] = useState<Set<number>>(new Set());
   const [playing, setPlaying] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [loadingError, setLoadingError] = useState<string | null>(null);
   const [notice, setNotice] = useState("ካርዶች እየተጫኑ ነው...");
   const [panel, setPanel] = useState<"profile" | "wallet" | null>(null);
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
@@ -673,6 +674,17 @@ export default function Index() {
       .every((cell) => cell !== undefined && (cell === 0 || called.has(cell)));
     return [...rows, ...columns, ...diagonals, ...(corners ? [13] : [])];
   };
+  useEffect(() => {
+    if (!finalizing) {
+      setLoadingError(null);
+      return;
+    }
+    setLoadingError(null);
+    const timer = window.setTimeout(() => {
+      setLoadingError("የጨዋታው መጀመር በጣም ዘግይቷል።");
+    }, 15000);
+    return () => window.clearTimeout(timer);
+  }, [finalizing, game?.gameId]);
   const winners = game?.winners ?? [];
   const winner = winners.length > 0;
   const winnerCardIds = winners.map((winner) => winner.cardNumber);
@@ -726,6 +738,15 @@ export default function Index() {
         </button>
         <small className="landing-note">ካርድዎን ለመምረጥ ይቀጥሉ</small>
       {adminUnlockOpen && <AdminPasswordDialog onClose={() => setAdminUnlockOpen(false)} onSuccess={completeAdminLogin} />}
+      </main>
+    );
+  if (finalizing && loadingError)
+    return (
+      <main className="app-shell app-error-shell" role="alert">
+        <div className="app-error-icon">!</div>
+        <h1>የጨዋታ መጀመር ስህተት</h1>
+        <p>{loadingError}</p>
+        <button className="start-button" type="button" onClick={() => window.location.reload()}>እንደገና ሞክር</button>
       </main>
     );
   if (finalizing)

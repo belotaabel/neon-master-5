@@ -162,6 +162,11 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible { outli
 .finalizing-shell h1 { margin: 0; color: var(--gold-bright); font-family: "Noto Sans Ethiopic", sans-serif; font-size: 25px; }
 .finalizing-shell p { margin: 0; color: var(--muted); font-family: "Noto Sans Ethiopic", sans-serif; }
 .finalizing-orb { width: 84px; height: 84px; margin: 0 auto 8px; border: 5px solid var(--gold); border-radius: 50%; box-shadow: 0 0 30px rgba(244, 189, 69, .36); animation: pulse 1.4s ease-in-out infinite; }
+.app-error-shell { display: grid; min-height: 100svh; place-content: center; justify-items: center; gap: 12px; padding: 24px; background: radial-gradient(circle at 50% 35%, #4a1c2b, var(--page) 65%); text-align: center; }
+.app-error-icon { display: grid; width: 58px; height: 58px; place-items: center; border: 2px solid var(--danger); border-radius: 50%; color: var(--danger); font-size: 31px; font-weight: 800; }
+.app-error-shell h1 { margin: 0; color: var(--gold-bright); font-family: "Noto Sans Ethiopic", sans-serif; font-size: 24px; }
+.app-error-shell p { max-width: 330px; margin: 0; color: var(--muted); font-family: "Noto Sans Ethiopic", sans-serif; line-height: 1.6; }
+.app-error-shell .start-button { margin-top: 10px; }
 @keyframes pulse { 50% { transform: scale(1.08); box-shadow: 0 0 46px rgba(244, 189, 69, .62); } }
 .account-panel { position: fixed; z-index: 120; top: 0; right: 0; bottom: 0; width: min(390px, 100%); padding: 24px; border-left: 1px solid var(--border); background: linear-gradient(160deg, #561f30, #260e16); box-shadow: -15px 0 35px rgba(0, 0, 0, .36); }
 .account-panel > .icon-button { margin-left: -8px; }
