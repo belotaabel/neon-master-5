@@ -4,7 +4,8 @@ import { BOT_ROSTER } from "@shared/api";
 import { BOT_DEFAULT_BALANCE, BOT_TELEGRAM_ID_BASE, db, getBotSettings, persistSelectedCards } from "./db";
 
 const CARD_PRICE = 10;
-const BOT_SELECTION_INTERVAL_MS = 750;
+const BOT_SELECTION_MIN_DELAY_MS = 450;
+const BOT_SELECTION_MAX_DELAY_MS = 650;
 
 export { BOT_ROSTER };
 
@@ -85,22 +86,33 @@ async function runBotCoordinator(gameId: string) {
       [gameId],
     );
     const existingBots = new Set(existing.rows.map((row) => row.bot_key));
-    const elapsed = Math.max(0, Date.now() - new Date(game.rows[0].selecting_started_at).getTime());
-    const availableBotSlots = Math.min(settings.botCount, Math.floor(elapsed / BOT_SELECTION_INTERVAL_MS) + 1);
-    let added = 0;
-    for (let index = 0; index < Math.min(availableBotSlots, BOT_ROSTER.length); index += 1) {
-      const botKey = `global-bot:${index}`;
-      if (existingBots.has(botKey)) continue;
-      const cards = chooseBotCards(await availableCards(client, gameId));
-      if (!cards.length) break;
-      const userId = await botUser(client, index, BOT_ROSTER[index]);
-      await fundBot(client, userId);
-      await persistSelectedCards(gameId, userId, cards, client);
-      existingBots.add(botKey);
-      added += 1;
+    const nextBotIndex = BOT_ROSTER.findIndex((_, index) => index < settings.botCount && !existingBots.has(`global-bot:${index}`));
+    if (nextBotIndex === -1) {
+      await client.query("COMMIT");
+      return 0;
     }
+    const latestBotCard = await client.query<{ latest_purchased_at: string | Date | null }>(
+      `SELECT MAX(gc.purchased_at) AS latest_purchased_at
+       FROM game_cards gc JOIN users u ON u.id = gc.user_id
+       WHERE gc.game_id = $1 AND u.is_bot = TRUE`,
+      [gameId],
+    );
+    const latestPurchasedAt = latestBotCard.rows[0]?.latest_purchased_at;
+    const delay = randomInt(BOT_SELECTION_MIN_DELAY_MS, BOT_SELECTION_MAX_DELAY_MS + 1);
+    if (latestPurchasedAt && Date.now() - new Date(latestPurchasedAt).getTime() < delay) {
+      await client.query("COMMIT");
+      return 0;
+    }
+    const cards = chooseBotCards(await availableCards(client, gameId));
+    if (!cards.length) {
+      await client.query("COMMIT");
+      return 0;
+    }
+    const userId = await botUser(client, nextBotIndex, BOT_ROSTER[nextBotIndex]);
+    await fundBot(client, userId);
+    await persistSelectedCards(gameId, userId, cards, client);
     await client.query("COMMIT");
-    return added;
+    return 1;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

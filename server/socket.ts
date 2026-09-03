@@ -43,6 +43,7 @@ function toGameState(row: any): GameState {
 export function registerGameSockets(io: Server, serviceMode: GameType = "75") {
   const activeGames = new Map<GameType, string>();
   const tickInProgress = new Set<GameType>();
+  const botTickInProgress = new Set<GameType>();
 
   const roomFor = (gameType: GameType, gameId: string) => `game:${gameType}:${gameId}`;
 
@@ -60,6 +61,24 @@ export function registerGameSockets(io: Server, serviceMode: GameType = "75") {
     await broadcastState(gameType);
   };
 
+  const advanceBots = async (gameType: GameType) => {
+    if (botTickInProgress.has(gameType)) return;
+    botTickInProgress.add(gameType);
+    try {
+      const liveGame = await getActiveGame();
+      if (liveGame.status !== "selecting") return;
+      const addedBot = await ensureBotsForSelectingGame(String(liveGame.id));
+      if (addedBot > 0) {
+        activeGames.set(gameType, String(liveGame.id));
+        await broadcastState(gameType);
+      }
+    } catch (error) {
+      console.error(`Unable to coordinate ${gameType} bingo bots`, error);
+    } finally {
+      botTickInProgress.delete(gameType);
+    }
+  };
+
   const advanceMode = async (gameType: GameType) => {
     if (tickInProgress.has(gameType)) return;
     tickInProgress.add(gameType);
@@ -69,9 +88,6 @@ export function registerGameSockets(io: Server, serviceMode: GameType = "75") {
       activeGames.set(gameType, liveGameId);
       if (liveGame.status === "finalizing") {
         await finishFinalizingGame(gameType, liveGameId);
-      } else if (liveGame.status === "selecting") {
-        const addedBots = await ensureBotsForSelectingGame(liveGameId);
-        if (addedBots > 0) await broadcastState(gameType);
       }
       const transition = liveGame.status === "selecting" ? await advanceSelectingGame() : null;
       if (transition?.started && transition.gameId === activeGames.get(gameType)) {
@@ -99,6 +115,9 @@ export function registerGameSockets(io: Server, serviceMode: GameType = "75") {
   const timer = setInterval(() => {
     void advanceMode(serviceMode);
   }, 2500);
+  const botTimer = setInterval(() => {
+    void advanceBots(serviceMode);
+  }, 300);
 
   io.use((socket, next) => {
     if (isSimulationSocketData(socket.data)) return next();
@@ -188,5 +207,8 @@ export function registerGameSockets(io: Server, serviceMode: GameType = "75") {
     socket.on("disconnect", leaveGame);
   });
 
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    clearInterval(botTimer);
+  };
 }
