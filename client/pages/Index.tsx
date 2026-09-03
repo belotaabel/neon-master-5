@@ -602,7 +602,7 @@ export default function Index() {
       setOccupiedCardIds(new Set(state.occupiedCardNumbers.filter((id) => Number.isInteger(id) && id >= 1 && id <= 400 && !selectedRef.current.includes(id))));
       setBotCardIds(new Set(state.botCardNumbers.filter((id) => Number.isInteger(id) && id >= 1 && id <= 400)));
       setFinalizing(state.status === "finalizing");
-      setPlaying((state.status === "active" || state.status === "complete") && selectedRef.current.length > 0);
+      setPlaying(state.status === "complete" || (state.status === "active" && selectedRef.current.length > 0));
       setCalled(new Set(state.calledNumbers));
       setCurrentBall(state.currentBall);
     });
