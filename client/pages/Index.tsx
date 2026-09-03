@@ -475,7 +475,7 @@ export default function Index() {
           occupiedCardNumbers,
           botCardNumbers,
           prizeAmount: Number(activeGame.prize_pool ?? 0),
-          status: activeGame.status === "finished" ? "complete" : activeGame.status === "playing" ? "active" : activeGame.status === "finalizing" ? "finalizing" : "waiting",
+          status: activeGame.status === "finished" ? "complete" : activeGame.status === "playing" || activeGame.status === "active" ? "active" : activeGame.status === "finalizing" ? "finalizing" : "waiting",
           winners: current?.gameId === nextGameId ? current.winners : [],
           selectionEndsAt: activeGame.selectionEndsAt ?? null,
         }));
@@ -494,7 +494,7 @@ export default function Index() {
         setPlaying(false);
         setCountdown(null);
       }
-      if (activeGame.status === "playing") {
+      if (activeGame.status === "playing" || activeGame.status === "active") {
         setFinalizing(false);
         setCountdown(null);
         if (selected.length) {
