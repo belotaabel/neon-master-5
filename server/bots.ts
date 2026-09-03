@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import type { PoolClient } from "pg";
 import { BOT_ROSTER } from "@shared/api";
-import { BOT_DEFAULT_BALANCE, BOT_TELEGRAM_ID_BASE, db, getBotSettings, persistSelectedCards } from "./db";
+import { BOT_DEFAULT_BALANCE, BOT_TELEGRAM_ID_BASE, CARD_SELECTION_LOCKED_ERROR, db, getBotSettings, persistSelectedCards } from "./db";
 
 const CARD_PRICE = 10;
 const BOT_SELECTION_MIN_DELAY_MS = 450;
@@ -75,7 +75,8 @@ async function runBotCoordinator(gameId: string) {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(90213, hashtext($1))", [gameId]);
     const game = await client.query("SELECT status, selecting_started_at FROM games WHERE id = $1 AND game_type = '75' FOR UPDATE", [gameId]);
-    if (!game.rowCount || game.rows[0].status !== "selecting" || Date.now() - new Date(game.rows[0].selecting_started_at).getTime() >= 47000) {
+    const selectingStartedAt = game.rowCount ? new Date(game.rows[0].selecting_started_at).getTime() : 0;
+    if (!game.rowCount || game.rows[0].status !== "selecting" || Date.now() - selectingStartedAt >= 45000) {
       await client.query("COMMIT");
       return 0;
     }
@@ -104,7 +105,7 @@ async function runBotCoordinator(gameId: string) {
       return 0;
     }
     const cards = chooseBotCards(await availableCards(client, gameId));
-    if (!cards.length) {
+    if (Date.now() - selectingStartedAt >= 45000 || !cards.length) {
       await client.query("COMMIT");
       return 0;
     }
@@ -126,6 +127,7 @@ export async function ensureBotsForSelectingGame(gameId: string) {
     try {
       return await runBotCoordinator(gameId);
     } catch (error) {
+      if (error instanceof Error && error.message === CARD_SELECTION_LOCKED_ERROR) return 0;
       if ((error as { code?: string }).code !== "23505" || attempt === 2) throw error;
     }
   }
