@@ -439,13 +439,23 @@ export default function Index() {
   useEffect(() => { if (panel === "wallet") loadWallet().catch((error) => setNotice(error.message)); }, [panel]);
   useEffect(() => {
     const url = `${apiBase}/api/game?gameType=${gameType}${user ? `&userId=${user.id}` : ""}`;
-    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; botCardNumbers?: unknown; cardCount?: number } | null) => {
+    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; botCardNumbers?: unknown; cardCount?: number; called_numbers?: unknown; current_number?: unknown; prize_pool?: unknown } | null) => {
       if (!activeGame) {
         setSelectionGameStatus(null);
         setOccupiedCardIds(new Set());
         setBotCardIds(new Set());
         return;
       }
+      const calledNumbers = Array.isArray(activeGame.called_numbers)
+        ? activeGame.called_numbers.filter((number): number is number => Number.isInteger(number) && number >= 1 && number <= 75)
+        : [];
+      const currentBall = Number.isInteger(activeGame.current_number) ? Number(activeGame.current_number) : null;
+      const occupiedCardNumbers = Array.isArray(activeGame.occupiedCardNumbers)
+        ? activeGame.occupiedCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400)
+        : [];
+      const botCardNumbers = Array.isArray(activeGame.botCardNumbers)
+        ? activeGame.botCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400)
+        : [];
       if (activeGame.id !== undefined) {
         const nextGameId = String(activeGame.id);
         if (currentGameId.current && currentGameId.current !== nextGameId) {
@@ -456,6 +466,21 @@ export default function Index() {
         }
         currentGameId.current = nextGameId;
         setGameId(nextGameId);
+        setGame((current) => ({
+          gameId: nextGameId,
+          calledNumbers,
+          currentBall,
+          playerCount: current?.gameId === nextGameId ? current.playerCount : 0,
+          cardCount: Number(activeGame.cardCount ?? 0),
+          occupiedCardNumbers,
+          botCardNumbers,
+          prizeAmount: Number(activeGame.prize_pool ?? 0),
+          status: activeGame.status === "finished" ? "complete" : activeGame.status === "playing" ? "active" : activeGame.status === "finalizing" ? "finalizing" : "waiting",
+          winners: current?.gameId === nextGameId ? current.winners : [],
+          selectionEndsAt: activeGame.selectionEndsAt ?? null,
+        }));
+        setCalled(new Set(calledNumbers));
+        setCurrentBall(currentBall);
       }
       setSelectionGameStatus(activeGame.status ?? null);
       setCurrentCardCount(activeGame.cardCount ?? 0);
@@ -479,8 +504,8 @@ export default function Index() {
           setNotice("ይህን ጨዋታ ለመጫወት ቢያንስ አንድ ካርድ ይግዙ። የሚቀጥለውን ዙር ይጠብቁ።");
         }
       }
-      setOccupiedCardIds(new Set(Array.isArray(activeGame.occupiedCardNumbers) ? activeGame.occupiedCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400) : []));
-      setBotCardIds(new Set(Array.isArray(activeGame.botCardNumbers) ? activeGame.botCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400) : []));
+      setOccupiedCardIds(new Set(occupiedCardNumbers));
+      setBotCardIds(new Set(botCardNumbers));
     };
     fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); setBotCardIds(new Set()); });
     const statusTimer = window.setInterval(() => fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); setBotCardIds(new Set()); }), 2000);
