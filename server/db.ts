@@ -10,6 +10,7 @@ export const db = process.env.DATABASE_URL
 
 export type GameType = "75";
 export type BingoCardRecord = { card_number: number; rows: number[][]; game_type?: GameType };
+export const CARD_SELECTION_LOCKED_ERROR = "የካርድ ምርጫው ለመጀመር 3 ሰከንድ ሲቀር ይቆለፋል";
 
 const bingo75Ranges = [[1, 15], [16, 30], [31, 45], [46, 60], [61, 75]] as const;
 
@@ -538,16 +539,25 @@ export async function getActiveGame(userId?: number) {
           [game.id, userId],
         )
       : { rows: [] as Array<{ card_number: number }> };
+    const botCardsResult = await client.query(
+      `SELECT gc.card_number
+       FROM game_cards gc
+       JOIN users u ON u.id = gc.user_id
+       WHERE gc.game_id = $1 AND u.is_bot = TRUE`,
+      [game.id],
+    );
     const occupiedCardNumbers = occupiedResult.rows.map((row) => {
       const cardNumber = Number(row.card_number);
       return cardNumber - 400;
     });
+    const botCardNumbers = botCardsResult.rows.map((row) => Number(row.card_number) - 400);
+    const playerCountResult = await client.query("SELECT COUNT(DISTINCT user_id)::int AS count FROM game_cards WHERE game_id = $1", [game.id]);
     const cardCountResult = await client.query("SELECT COUNT(*)::int AS count FROM game_cards WHERE game_id = $1", [game.id]);
     await client.query("COMMIT");
     const selectionEndsAt = game.selecting_started_at
       ? new Date(new Date(game.selecting_started_at).getTime() + 50000).toISOString()
       : null;
-    return { ...game, selectionEndsAt, occupiedCardNumbers, cardCount: Number(cardCountResult.rows[0]?.count ?? 0) };
+    return { ...game, selectionEndsAt, occupiedCardNumbers, botCardNumbers, playerCount: Number(playerCountResult.rows[0]?.count ?? 0), cardCount: Number(cardCountResult.rows[0]?.count ?? 0) };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -566,7 +576,7 @@ export async function persistSelectedCards(gameId: string, userId: number, cardN
     await client.query("SELECT pg_advisory_xact_lock(90213, hashtext($1))", [gameId]);
     const gameStatus = await client.query("SELECT status, selecting_started_at FROM games WHERE id = $1 AND game_type = $2 FOR UPDATE", [gameId, gameType]);
     if (!gameStatus.rowCount) throw new Error("Game not found");
-    if (gameStatus.rows[0].status !== "selecting" || Date.now() - new Date(gameStatus.rows[0].selecting_started_at).getTime() >= 47000) throw new Error("የካርድ ምርጫው ለመጀመር 3 ሰከንድ ሲቀር ይቆለፋል");
+    if (gameStatus.rows[0].status !== "selecting" || Date.now() - new Date(gameStatus.rows[0].selecting_started_at).getTime() >= 47000) throw new Error(CARD_SELECTION_LOCKED_ERROR);
     const storedCards = cardNumbers.map((n) => n + 400);
     const validCards = await client.query(
       "SELECT card_number FROM bingo_cards WHERE game_type = $1 AND card_number = ANY($2::int[])",
@@ -725,9 +735,11 @@ export async function readGameState(gameId: string) {
     `SELECT g.id, g.status, g.prize_pool, g.called_numbers, g.current_number, g.selecting_started_at,
             COUNT(DISTINCT gc.user_id)::int AS player_count,
             COUNT(gc.card_number)::int AS card_count,
-            COALESCE(ARRAY_AGG(gc.card_number - 400) FILTER (WHERE gc.card_number IS NOT NULL), '{}') AS occupied_card_numbers
+            COALESCE(ARRAY_AGG(gc.card_number - 400) FILTER (WHERE gc.card_number IS NOT NULL), '{}') AS occupied_card_numbers,
+            COALESCE(ARRAY_AGG(gc.card_number - 400) FILTER (WHERE gc.card_number IS NOT NULL AND u.is_bot = TRUE), '{}') AS bot_card_numbers
      FROM games g
      LEFT JOIN game_cards gc ON gc.game_id = g.id
+     LEFT JOIN users u ON u.id = gc.user_id
      WHERE g.id = $1
      GROUP BY g.id`,
     [gameId],

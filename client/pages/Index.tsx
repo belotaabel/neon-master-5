@@ -34,6 +34,7 @@ type GameState = {
   playerCount: number;
   cardCount: number;
   occupiedCardNumbers: number[];
+  botCardNumbers: number[];
   prizeAmount: number;
   status: string;
   winners: BingoWinner[];
@@ -365,8 +366,10 @@ export default function Index() {
   const [gameId, setGameId] = useState<string | null>(null);
   const currentGameId = useRef<string | null>(null);
   const [occupiedCardIds, setOccupiedCardIds] = useState<Set<number>>(new Set());
+  const [botCardIds, setBotCardIds] = useState<Set<number>>(new Set());
   const [playing, setPlaying] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [loadingError, setLoadingError] = useState<string | null>(null);
   const [notice, setNotice] = useState("ካርዶች እየተጫኑ ነው...");
   const [panel, setPanel] = useState<"profile" | "wallet" | null>(null);
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
@@ -437,17 +440,48 @@ export default function Index() {
   useEffect(() => { if (panel === "wallet") loadWallet().catch((error) => setNotice(error.message)); }, [panel]);
   useEffect(() => {
     const url = `${apiBase}/api/game?gameType=${gameType}${user ? `&userId=${user.id}` : ""}`;
-    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; cardCount?: number } | null) => {
-      if (!activeGame) return;
+    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; botCardNumbers?: unknown; playerCount?: number; player_count?: number; cardCount?: number; called_numbers?: unknown; current_number?: unknown; prize_pool?: unknown } | null) => {
+      if (!activeGame) {
+        setSelectionGameStatus(null);
+        setOccupiedCardIds(new Set());
+        setBotCardIds(new Set());
+        return;
+      }
+      const calledNumbers = Array.isArray(activeGame.called_numbers)
+        ? activeGame.called_numbers.filter((number): number is number => Number.isInteger(number) && number >= 1 && number <= 75)
+        : [];
+      const currentBall = Number.isInteger(activeGame.current_number) ? Number(activeGame.current_number) : null;
+      const occupiedCardNumbers = Array.isArray(activeGame.occupiedCardNumbers)
+        ? activeGame.occupiedCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400)
+        : [];
+      const botCardNumbers = Array.isArray(activeGame.botCardNumbers)
+        ? activeGame.botCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400)
+        : [];
       if (activeGame.id !== undefined) {
         const nextGameId = String(activeGame.id);
         if (currentGameId.current && currentGameId.current !== nextGameId) {
           gameSocket.current?.emit("game:leave");
           setSelected([]);
           setOccupiedCardIds(new Set());
+          setBotCardIds(new Set());
         }
         currentGameId.current = nextGameId;
         setGameId(nextGameId);
+        setGame((current) => ({
+          gameId: nextGameId,
+          calledNumbers,
+          currentBall,
+          playerCount: Number(activeGame.playerCount ?? activeGame.player_count ?? 0),
+          cardCount: Number(activeGame.cardCount ?? 0),
+          occupiedCardNumbers,
+          botCardNumbers,
+          prizeAmount: Number(activeGame.prize_pool ?? 0),
+          status: activeGame.status === "finished" ? "complete" : activeGame.status === "playing" || activeGame.status === "active" ? "active" : activeGame.status === "finalizing" ? "finalizing" : "waiting",
+          winners: current?.gameId === nextGameId ? current.winners : [],
+          selectionEndsAt: activeGame.selectionEndsAt ?? null,
+        }));
+        setCalled(new Set(calledNumbers));
+        setCurrentBall(currentBall);
       }
       setSelectionGameStatus(activeGame.status ?? null);
       setCurrentCardCount(activeGame.cardCount ?? 0);
@@ -461,7 +495,7 @@ export default function Index() {
         setPlaying(false);
         setCountdown(null);
       }
-      if (activeGame.status === "playing") {
+      if (activeGame.status === "playing" || activeGame.status === "active") {
         setFinalizing(false);
         setCountdown(null);
         if (selected.length) {
@@ -471,10 +505,11 @@ export default function Index() {
           setNotice("ይህን ጨዋታ ለመጫወት ቢያንስ አንድ ካርድ ይግዙ። የሚቀጥለውን ዙር ይጠብቁ።");
         }
       }
-      setOccupiedCardIds(new Set(Array.isArray(activeGame.occupiedCardNumbers) ? activeGame.occupiedCardNumbers.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 400) : []));
+      setOccupiedCardIds(new Set(occupiedCardNumbers));
+      setBotCardIds(new Set(botCardNumbers));
     };
-    fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); });
-    const statusTimer = window.setInterval(() => fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => undefined), 2000);
+    fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); setBotCardIds(new Set()); });
+    const statusTimer = window.setInterval(() => fetch(url).then((r) => r.ok ? r.json() : null).then(applyGameInfo).catch(() => { setSelectionGameStatus(null); setOccupiedCardIds(new Set()); setBotCardIds(new Set()); }), 2000);
     return () => window.clearInterval(statusTimer);
   }, [gameType, apiBase, user, selected.length]);
   useEffect(() => {
@@ -565,8 +600,9 @@ export default function Index() {
       setGame(state);
       setCurrentCardCount(state.cardCount);
       setOccupiedCardIds(new Set(state.occupiedCardNumbers.filter((id) => Number.isInteger(id) && id >= 1 && id <= 400 && !selectedRef.current.includes(id))));
+      setBotCardIds(new Set(state.botCardNumbers.filter((id) => Number.isInteger(id) && id >= 1 && id <= 400)));
       setFinalizing(state.status === "finalizing");
-      setPlaying((state.status === "active" || state.status === "complete") && selectedRef.current.length > 0);
+      setPlaying(state.status === "complete" || (state.status === "active" && selectedRef.current.length > 0));
       setCalled(new Set(state.calledNumbers));
       setCurrentBall(state.currentBall);
     });
@@ -638,6 +674,17 @@ export default function Index() {
       .every((cell) => cell !== undefined && (cell === 0 || called.has(cell)));
     return [...rows, ...columns, ...diagonals, ...(corners ? [13] : [])];
   };
+  useEffect(() => {
+    if (!finalizing) {
+      setLoadingError(null);
+      return;
+    }
+    setLoadingError(null);
+    const timer = window.setTimeout(() => {
+      setLoadingError("የጨዋታው መጀመር በጣም ዘግይቷል።");
+    }, 15000);
+    return () => window.clearTimeout(timer);
+  }, [finalizing, game?.gameId]);
   const winners = game?.winners ?? [];
   const winner = winners.length > 0;
   const winnerCardIds = winners.map((winner) => winner.cardNumber);
@@ -693,6 +740,15 @@ export default function Index() {
       {adminUnlockOpen && <AdminPasswordDialog onClose={() => setAdminUnlockOpen(false)} onSuccess={completeAdminLogin} />}
       </main>
     );
+  if (finalizing && loadingError)
+    return (
+      <main className="app-shell app-error-shell" role="alert">
+        <div className="app-error-icon">!</div>
+        <h1>የጨዋታ መጀመር ስህተት</h1>
+        <p>{loadingError}</p>
+        <button className="start-button" type="button" onClick={() => window.location.reload()}>እንደገና ሞክር</button>
+      </main>
+    );
   if (finalizing)
     return (
       <main className="app-shell finalizing-shell" aria-live="polite">
@@ -722,8 +778,8 @@ export default function Index() {
           <div className="stat purple">
             <Users />
             <span>
-              <small>የአሁኑ ጨዋታ ካርዶች</small>
-            <b>{currentCardCount}</b>
+              <small>የአሁኑ ጨዋታ ፕሌየርስ</small>
+            <b>{game?.playerCount ?? 0}</b>
             </span>
           </div>
           <div className="stat blue">
@@ -867,11 +923,11 @@ export default function Index() {
         {cardIdentifiers.map((id) => (
           <button
             key={id}
-            className={`${selected.includes(id) ? "active" : ""} ${occupiedCardIds.has(id) ? "occupied" : ""}`}
+            className={`${selected.includes(id) ? "active" : ""} ${occupiedCardIds.has(id) ? "occupied" : ""} ${botCardIds.has(id) ? "bot-occupied" : ""}`}
             onClick={() => toggle(id)}
             disabled={selectionLocked || occupiedCardIds.has(id)}
             aria-pressed={selected.includes(id)}
-            aria-label={occupiedCardIds.has(id) ? `Card ${id}, occupied` : `Card ${id}`}
+            aria-label={botCardIds.has(id) ? `Card ${id}, occupied by bot` : occupiedCardIds.has(id) ? `Card ${id}, occupied` : `Card ${id}`}
           >
             {id}
           </button>
