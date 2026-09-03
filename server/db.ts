@@ -551,12 +551,13 @@ export async function getActiveGame(userId?: number) {
       return cardNumber - 400;
     });
     const botCardNumbers = botCardsResult.rows.map((row) => Number(row.card_number) - 400);
+    const playerCountResult = await client.query("SELECT COUNT(DISTINCT user_id)::int AS count FROM game_cards WHERE game_id = $1", [game.id]);
     const cardCountResult = await client.query("SELECT COUNT(*)::int AS count FROM game_cards WHERE game_id = $1", [game.id]);
     await client.query("COMMIT");
     const selectionEndsAt = game.selecting_started_at
       ? new Date(new Date(game.selecting_started_at).getTime() + 50000).toISOString()
       : null;
-    return { ...game, selectionEndsAt, occupiedCardNumbers, botCardNumbers, cardCount: Number(cardCountResult.rows[0]?.count ?? 0) };
+    return { ...game, selectionEndsAt, occupiedCardNumbers, botCardNumbers, playerCount: Number(playerCountResult.rows[0]?.count ?? 0), cardCount: Number(cardCountResult.rows[0]?.count ?? 0) };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

@@ -440,7 +440,7 @@ export default function Index() {
   useEffect(() => { if (panel === "wallet") loadWallet().catch((error) => setNotice(error.message)); }, [panel]);
   useEffect(() => {
     const url = `${apiBase}/api/game?gameType=${gameType}${user ? `&userId=${user.id}` : ""}`;
-    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; botCardNumbers?: unknown; cardCount?: number; called_numbers?: unknown; current_number?: unknown; prize_pool?: unknown } | null) => {
+    const applyGameInfo = (activeGame: { id?: string | number; status?: string; selectionEndsAt?: string | null; occupiedCardNumbers?: unknown; botCardNumbers?: unknown; playerCount?: number; player_count?: number; cardCount?: number; called_numbers?: unknown; current_number?: unknown; prize_pool?: unknown } | null) => {
       if (!activeGame) {
         setSelectionGameStatus(null);
         setOccupiedCardIds(new Set());
@@ -471,7 +471,7 @@ export default function Index() {
           gameId: nextGameId,
           calledNumbers,
           currentBall,
-          playerCount: current?.gameId === nextGameId ? current.playerCount : 0,
+          playerCount: Number(activeGame.playerCount ?? activeGame.player_count ?? 0),
           cardCount: Number(activeGame.cardCount ?? 0),
           occupiedCardNumbers,
           botCardNumbers,
@@ -778,8 +778,8 @@ export default function Index() {
           <div className="stat purple">
             <Users />
             <span>
-              <small>የአሁኑ ጨዋታ ካርዶች</small>
-            <b>{currentCardCount}</b>
+              <small>የአሁኑ ጨዋታ ፕሌየርስ</small>
+            <b>{game?.playerCount ?? 0}</b>
             </span>
           </div>
           <div className="stat blue">
